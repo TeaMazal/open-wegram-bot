@@ -3,6 +3,7 @@ main = "src/worker.js"
 compatibility_date = "2023-05-18"
 keep_vars = true
 
+# Keep non-sensitive runtime configuration in version control.
 [vars]
 PREFIX = "public"
 
