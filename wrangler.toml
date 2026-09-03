@@ -3,5 +3,8 @@ main = "src/worker.js"
 compatibility_date = "2023-05-18"
 keep_vars = true
 
+[vars]
+PREFIX = "public"
+
 [placement]
 mode = "smart"
