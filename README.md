@@ -4,6 +4,8 @@
 
 简体中文 | [English](README_EN.md) 
 
+📘 [Cloudflare 部署、运维与故障排查完整教程](TELEGRAM_BOT_DEPLOYMENT_GUIDE.md)
+
 这是一个基于 Cloudflare Worker / Vercel 的 Telegram 双向私聊机器人，无需服务器、无需数据库、无需自己的域名即可轻松部署。
 
 用户可以通过您的机器人向您发送消息，您可以直接回复这些消息，实现双向通信。
