@@ -14,6 +14,19 @@ export function jsonResponse(data, status = 200) {
     });
 }
 
+export function formatSenderName(sender, maxLength = 40) {
+    const displayName = [sender.first_name, sender.last_name].filter(Boolean).join(' ');
+    const username = sender.username ? `@${sender.username}` : '';
+    const senderName = [displayName, username].filter(Boolean).join(' · ');
+    const characters = Array.from(senderName);
+
+    if (characters.length <= maxLength) {
+        return senderName;
+    }
+
+    return `${characters.slice(0, maxLength - 1).join('')}…`;
+}
+
 export async function postToTelegramApi(token, method, body) {
     return fetch(`https://api.telegram.org/bot${token}/${method}`, {
         method: 'POST',
@@ -111,7 +124,7 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken) {
 
         const sender = message.chat;
         const senderUid = sender.id.toString();
-        const senderName = sender.username ? `@${sender.username}` : [sender.first_name, sender.last_name].filter(Boolean).join(' ');
+        const senderName = formatSenderName(sender);
 
         const copyMessage = async function (withUrl = false) {
             const ik = [[{
