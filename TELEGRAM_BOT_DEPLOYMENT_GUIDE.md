@@ -269,9 +269,12 @@ https://YOUR_DOMAIN/admin
 - 在面板里修改登录密码
 - 开关：是否允许转发群消息
 - 发测试私聊
+- 查看最近私聊摘要
 - 查看最近操作记录
 
-面板密码保存在 Cloudflare KV，不进 GitHub。改密码后用新密码登录；Cloudflare 里的 `ADMIN_PASSWORD` 仍可应急登录。
+「最近私聊」只记录本功能上线之后、当前选中机器人的私聊摘要：时间、访客名称 / UID、方向、文字预览。图片和文件只显示类型，不存媒体。以前的对话补不回来。后台只能看，回复仍然要在 Telegram 里点那条转发。
+
+面板密码和私聊摘要都保存在 Cloudflare KV，不进 GitHub。改密码后用新密码登录；Cloudflare 里的 `ADMIN_PASSWORD` 仍可应急登录。
 
 双向仍然只转发私聊。旧的 `/public/install/...` 链接还可用，但建议改用面板，避免 Token 进浏览器历史记录。
 
@@ -548,6 +551,7 @@ https://api.telegram.org/botYOUR_BOT_TOKEN/getMe
 - 不要把含 Token 的安装、卸载、`getMe` 或 `getWebhookInfo` 完整 URL 分享给他人。
 - 定期查看 GitHub 提交历史和 Cloudflare 日志，确认没有密钥。
 - GitHub 仓库公开时，提交前先做敏感信息扫描。
+- 管理面板会把最近私聊的文字预览存进 Cloudflare KV。不要把面板密码告诉别人，也不要把 `/admin` 暴露给不相关的人。
 
 ### 这个项目特有的风险
 
@@ -579,6 +583,7 @@ https://api.telegram.org/botYOUR_BOT_TOKEN/getMe
 - [ ] `getWebhookInfo` 显示当前域名，且没有持续错误。
 - [ ] 另一个 Telegram 账号发送普通消息后，管理员能够收到。
 - [ ] 管理员通过“回复”操作后，访客能够收到。
+- [ ] `/admin` 的最近私聊能看到上线后的私聊摘要，且群消息默认不会出现。
 - [ ] 第二个机器人使用独立 Token 单独验证。
 - [ ] 曾经公开过的临时 Token 已通过 BotFather 撤销。
 

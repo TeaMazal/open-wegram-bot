@@ -3,6 +3,8 @@
  * Shared code between Cloudflare Worker and Vercel deployments
  */
 
+import {pushChat} from './store.js';
+
 export function validateSecretToken(token) {
     return token.length > 15 && /[A-Z]/.test(token) && /[a-z]/.test(token) && /[0-9]/.test(token);
 }
@@ -25,6 +27,62 @@ export function formatSenderName(sender, maxLength = 40) {
     }
 
     return `${characters.slice(0, maxLength - 1).join('')}…`;
+}
+
+export function messagePreview(message, maxLength = 200) {
+    const parts = [];
+    if (message.photo) parts.push('[图片]');
+    else if (message.sticker) parts.push('[贴纸]');
+    else if (message.animation) parts.push('[动图]');
+    else if (message.video_note) parts.push('[视频留言]');
+    else if (message.video) parts.push('[视频]');
+    else if (message.voice) parts.push('[语音]');
+    else if (message.audio) parts.push('[音频]');
+    else if (message.document) parts.push(message.document.file_name ? `[文件] ${message.document.file_name}` : '[文件]');
+    else if (message.contact) parts.push('[名片]');
+    else if (message.location || message.venue) parts.push('[位置]');
+    else if (message.poll) parts.push('[投票]');
+    else if (message.dice) parts.push('[骰子]');
+
+    const text = message.text || message.caption || '';
+    const source = [...parts, text].filter(Boolean).join(' ').trim() || '[其他消息]';
+    const characters = Array.from(source);
+    if (characters.length <= maxLength) {
+        return source;
+    }
+    return `${characters.slice(0, maxLength - 1).join('')}…`;
+}
+
+function visitorFromReplyMarkup(markup) {
+    const button = markup?.inline_keyboard?.[0]?.[0];
+    if (!button) {
+        return null;
+    }
+
+    let visitorUid = button.callback_data || '';
+    if (!visitorUid && button.url) {
+        visitorUid = String(button.url).split('tg://user?id=')[1] || '';
+    }
+    if (!visitorUid) {
+        return null;
+    }
+
+    const match = String(button.text || '').match(/From:\s*(.+)\s+\((\d+)\)\s*$/i);
+    return {
+        visitorUid: String(visitorUid),
+        visitorName: match ? match[1].trim() : visitorUid
+    };
+}
+
+async function recordPrivateChat(kv, botToken, record) {
+    if (!kv) {
+        return;
+    }
+    try {
+        await pushChat(kv, botToken, record);
+    } catch (error) {
+        console.error('Error saving chat preview:', error);
+    }
 }
 
 export async function postToTelegramApi(token, method, body) {
@@ -87,7 +145,7 @@ export async function handleUninstall(botToken, secretToken) {
     }
 }
 
-export async function handleWebhook(request, ownerUid, botToken, secretToken, forwardGroups = false) {
+export async function handleWebhook(request, ownerUid, botToken, secretToken, forwardGroups = false, kv = null) {
     if (secretToken !== request.headers.get('X-Telegram-Bot-Api-Secret-Token')) {
         return new Response('Unauthorized', {status: 401});
     }
@@ -106,18 +164,22 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken, fo
     const reply = message.reply_to_message;
     try {
         if (reply && message.chat.id.toString() === ownerUid) {
-            const rm = reply.reply_markup;
-            if (rm && rm.inline_keyboard && rm.inline_keyboard.length > 0) {
-                let senderUid = rm.inline_keyboard[0][0].callback_data;
-                if (!senderUid) {
-                    senderUid = rm.inline_keyboard[0][0].url.split('tg://user?id=')[1];
-                }
-
+            const visitor = visitorFromReplyMarkup(reply.reply_markup);
+            if (visitor) {
                 await postToTelegramApi(botToken, 'copyMessage', {
-                    chat_id: parseInt(senderUid),
+                    chat_id: parseInt(visitor.visitorUid),
                     from_chat_id: message.chat.id,
                     message_id: message.message_id
                 });
+                if (isPrivate) {
+                    await recordPrivateChat(kv, botToken, {
+                        direction: 'out',
+                        ownerUid,
+                        visitorUid: visitor.visitorUid,
+                        visitorName: visitor.visitorName,
+                        preview: messagePreview(message)
+                    });
+                }
             }
 
             return new Response('OK');
@@ -155,6 +217,16 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken, fo
             await copyMessage();
         }
 
+        if (isPrivate) {
+            await recordPrivateChat(kv, botToken, {
+                direction: 'in',
+                ownerUid,
+                visitorUid: senderUid,
+                visitorName: senderName,
+                preview: messagePreview(message)
+            });
+        }
+
         return new Response('OK');
     } catch (error) {
         console.error('Error handling webhook:', error);
@@ -183,7 +255,7 @@ export async function handleRequest(request, config) {
     }
 
     if (match = path.match(WEBHOOK_PATTERN)) {
-        return handleWebhook(request, match[1], match[2], secretToken, config.forwardGroups);
+        return handleWebhook(request, match[1], match[2], secretToken, config.forwardGroups, config.kv);
     }
 
     return new Response('Not Found', {status: 404});

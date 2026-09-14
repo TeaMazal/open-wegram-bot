@@ -3,7 +3,7 @@
  */
 
 import {handleInstall, handleUninstall, postToTelegramApi} from './core.js';
-import {hashPassword, loadState, pushLog, saveState, verifyPassword} from './store.js';
+import {hashPassword, loadChats, loadState, pushLog, saveState, verifyPassword} from './store.js';
 
 const COOKIE = 'ow_admin';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
@@ -138,6 +138,11 @@ pre { white-space:pre-wrap; word-break:break-word; background:var(--soft); paddi
 .muted { color:var(--muted); font-size:13px; line-height:1.55; }
 .list { display:grid; gap:8px; }
 .item { display:flex; justify-content:space-between; gap:8px; align-items:center; background:var(--soft); border-radius:10px; padding:10px 12px; }
+.item.chat { align-items:flex-start; }
+.chat-main { min-width:0; flex:1; }
+.chat-preview { margin-top:4px; white-space:pre-wrap; word-break:break-word; }
+.dir-in { color:#cfe3ff; }
+.dir-out { color:var(--ok); }
 .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:#223044; color:#cfe3ff; font-size:12px; }
 .actions form { margin:0; }
 </style>
@@ -188,6 +193,28 @@ function logList(state) {
       </div>`).join('')}</div>`;
 }
 
+function chatList(state, chats) {
+    const bot = currentBot(state);
+    if (!bot) {
+        return '<p class="muted">先保存并选中一个机器人，才会显示对应的私聊摘要。</p>';
+    }
+    if (!chats.length) {
+        return '<p class="muted">还没有私聊摘要。开通双向之后，访客发来的私聊会出现在这里。以前的对话补不回来，图片和文件只显示类型。</p>';
+    }
+    return `<div class="list">${chats.map((chat) => {
+        const incoming = chat.direction !== 'out';
+        return `
+      <div class="item chat">
+        <div class="chat-main">
+          <strong class="${incoming ? 'dir-in' : 'dir-out'}">${incoming ? '访客 → 你' : '你 → 访客'}</strong>
+          <div class="muted">${escapeHtml(chat.visitorName || chat.visitorUid || '未知访客')} · UID ${escapeHtml(chat.visitorUid || '')}</div>
+          <div class="chat-preview">${escapeHtml(chat.preview || '[其他消息]')}</div>
+        </div>
+        <div class="muted">${escapeHtml(new Date(chat.t).toLocaleString('zh-CN', {hour12: false}))}</div>
+      </div>`;
+    }).join('')}</div>`;
+}
+
 function loginPage(config, flash) {
     return htmlPage('管理登录', `
       <h1>双向机器人管理</h1>
@@ -204,7 +231,7 @@ function loginPage(config, flash) {
     `);
 }
 
-function dashboard(state, flash, resultText = '') {
+function dashboard(state, flash, resultText = '', chats = []) {
     const bot = currentBot(state);
     const hasBot = !!bot;
     return htmlPage('管理面板', `
@@ -324,6 +351,11 @@ function dashboard(state, flash, resultText = '') {
       </div>
 
       <section class="card" style="margin-top:14px">
+        <h2>最近私聊</h2>
+        <p class="muted">只显示当前机器人、本功能上线之后的私聊摘要。后台只能看，回复还是去 Telegram 点那条转发。</p>
+        ${chatList(state, chats)}
+      </section>
+      <section class="card" style="margin-top:14px">
         <h2>操作记录</h2>
         ${logList(state)}
       </section>
@@ -411,13 +443,19 @@ async function passwordOk(password, config, state) {
     return !!(config.adminPassword && safeEqual(password, config.adminPassword));
 }
 
+async function renderDashboard(config, state, flash, resultText = '') {
+    const bot = currentBot(state);
+    const chats = await loadChats(config.kv, bot?.token);
+    return dashboard(state, flash, resultText, chats);
+}
+
 export async function handleAdmin(request, config) {
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
     const loggedIn = await hasSession(request, config);
     const state = await loadState(config.kv);
 
     if (path === '/admin' && request.method === 'GET') {
-        return loggedIn ? dashboard(state) : loginPage(config);
+        return loggedIn ? renderDashboard(config, state) : loginPage(config);
     }
 
     if (request.method !== 'POST' || !isSameOrigin(request)) {
@@ -443,35 +481,35 @@ export async function handleAdmin(request, config) {
     if (path === '/admin/select') {
         const form = await readForm(request);
         if (!findBot(state, form.id)) {
-            return dashboard(state, {type: 'bad', text: '没有这个机器人'});
+            return renderDashboard(config, state, {type: 'bad', text: '没有这个机器人'});
         }
         const next = await saveState(config.kv, {...state, selectedBotId: form.id});
-        return dashboard(next, {type: 'ok', text: `已切换到 ${findBot(next, form.id)?.name || '机器人'}`});
+        return renderDashboard(config, next, {type: 'ok', text: `已切换到 ${findBot(next, form.id)?.name || '机器人'}`});
     }
 
     if (path === '/admin/bots/save') {
         const form = await readForm(request);
         if (!form.token || !form.uid) {
-            return dashboard(state, {type: 'bad', text: '保存机器人需要 UID 和 Token'});
+            return renderDashboard(config, state, {type: 'bad', text: '保存机器人需要 UID 和 Token'});
         }
         const next = await persistBot(config, state, form.token, form.uid, true);
-        return dashboard(next, {type: 'ok', text: '已保存并设为当前机器人'});
+        return renderDashboard(config, next, {type: 'ok', text: '已保存并设为当前机器人'});
     }
 
     if (path === '/admin/password') {
         const form = await readForm(request);
         if (!await passwordOk(form.currentPassword, config, state)) {
-            return dashboard(state, {type: 'bad', text: '当前密码不对'});
+            return renderDashboard(config, state, {type: 'bad', text: '当前密码不对'});
         }
         if (!form.newPassword || form.newPassword.length < 6) {
-            return dashboard(state, {type: 'bad', text: '新密码至少 6 位'});
+            return renderDashboard(config, state, {type: 'bad', text: '新密码至少 6 位'});
         }
         if (form.newPassword !== form.confirmPassword) {
-            return dashboard(state, {type: 'bad', text: '两次新密码不一致'});
+            return renderDashboard(config, state, {type: 'bad', text: '两次新密码不一致'});
         }
         const password = await hashPassword(form.newPassword);
         const next = await saveState(config.kv, pushLog({...state, password}, '改密码', '已更新面板登录密码'));
-        return dashboard(next, {type: 'ok', text: '面板密码已更新，下次请用新密码登录'});
+        return renderDashboard(config, next, {type: 'ok', text: '面板密码已更新，下次请用新密码登录'});
     }
 
     if (path === '/admin/settings') {
@@ -480,7 +518,7 @@ export async function handleAdmin(request, config) {
             ...state,
             forwardGroups: form.forwardGroups === '1'
         }, '转发设置', form.forwardGroups === '1' ? '允许转发群消息' : '只转发私聊'));
-        return dashboard(next, {type: 'ok', text: next.forwardGroups ? '已允许转发群消息' : '已恢复为只转发私聊'});
+        return renderDashboard(config, next, {type: 'ok', text: next.forwardGroups ? '已允许转发群消息' : '已恢复为只转发私聊'});
     }
 
     if (path === '/admin/bots/delete') {
@@ -489,40 +527,40 @@ export async function handleAdmin(request, config) {
         const bots = (state.bots || []).filter((bot) => bot.id !== form.id);
         const selectedBotId = state.selectedBotId === form.id ? (bots[0]?.id || '') : state.selectedBotId;
         const next = await saveState(config.kv, pushLog({...state, bots, selectedBotId}, '删除机器人', removed?.name || form.id));
-        return dashboard(next, {type: 'ok', text: '已删除保存的机器人'});
+        return renderDashboard(config, next, {type: 'ok', text: '已删除保存的机器人'});
     }
 
     if (path === '/admin/install') {
         const form = await readForm(request);
         const creds = resolveCreds(form, state);
         if (!creds.uid || !creds.token) {
-            return dashboard(state, {type: 'bad', text: '请先保存一个带 UID 和 Token 的机器人'});
+            return renderDashboard(config, state, {type: 'bad', text: '请先保存一个带 UID 和 Token 的机器人'});
         }
         const response = await handleInstall(request, creds.uid, creds.token, config.prefix, config.secretToken);
         const payload = await response.json();
         const next = payload.success
             ? await persistBot(config, pushLog(state, '开通双向', creds.uid), creds.token, creds.uid, true)
             : state;
-        return dashboard(next, {type: payload.success ? 'ok' : 'bad', text: payload.message || JSON.stringify(payload)}, JSON.stringify(payload, null, 2));
+        return renderDashboard(config, next, {type: payload.success ? 'ok' : 'bad', text: payload.message || JSON.stringify(payload)}, JSON.stringify(payload, null, 2));
     }
 
     if (path === '/admin/uninstall') {
         const form = await readForm(request);
         const creds = resolveCreds(form, state);
         if (!creds.token) {
-            return dashboard(state, {type: 'bad', text: '请先选择已保存的机器人'});
+            return renderDashboard(config, state, {type: 'bad', text: '请先选择已保存的机器人'});
         }
         const response = await handleUninstall(creds.token, config.secretToken);
         const payload = await response.json();
         const next = payload.success ? await saveState(config.kv, pushLog(state, '关闭双向', creds.saved?.name || 'bot')) : state;
-        return dashboard(next, {type: payload.success ? 'ok' : 'bad', text: payload.message || JSON.stringify(payload)}, JSON.stringify(payload, null, 2));
+        return renderDashboard(config, next, {type: payload.success ? 'ok' : 'bad', text: payload.message || JSON.stringify(payload)}, JSON.stringify(payload, null, 2));
     }
 
     if (path === '/admin/status') {
         const form = await readForm(request);
         const creds = resolveCreds(form, state);
         if (!creds.token) {
-            return dashboard(state, {type: 'bad', text: '请先选择已保存的机器人'});
+            return renderDashboard(config, state, {type: 'bad', text: '请先选择已保存的机器人'});
         }
         const [meRes, hookRes] = await Promise.all([
             postToTelegramApi(creds.token, 'getMe', {}),
@@ -531,10 +569,10 @@ export async function handleAdmin(request, config) {
         const me = await meRes.json();
         const webhook = await hookRes.json();
         if (!me.ok) {
-            return dashboard(state, {type: 'bad', text: me.description || 'Token 无效'}, JSON.stringify(me, null, 2));
+            return renderDashboard(config, state, {type: 'bad', text: me.description || 'Token 无效'}, JSON.stringify(me, null, 2));
         }
         const next = await persistBot(config, pushLog(state, '查询状态', me.result?.username ? `@${me.result.username}` : 'bot'), creds.token, creds.uid, true);
-        return dashboard(next, {type: webhook.result?.url ? 'ok' : 'info', text: summarizeTelegram(me.result || {}, webhook.result || {})}, JSON.stringify({
+        return renderDashboard(config, next, {type: webhook.result?.url ? 'ok' : 'info', text: summarizeTelegram(me.result || {}, webhook.result || {})}, JSON.stringify({
             bot: me.result?.username ? `@${me.result.username}` : me.result?.first_name,
             webhook: maskWebhookUrl(webhook.result?.url || ''),
             pending_update_count: webhook.result?.pending_update_count ?? 0
@@ -545,19 +583,19 @@ export async function handleAdmin(request, config) {
         const form = await readForm(request);
         const creds = resolveCreds(form, state);
         if (!creds.token || !form.chatId || !form.text) {
-            return dashboard(state, {type: 'bad', text: '请选择机器人，并填写群 ID 和内容'});
+            return renderDashboard(config, state, {type: 'bad', text: '请选择机器人，并填写群 ID 和内容'});
         }
         const response = await postToTelegramApi(creds.token, 'sendMessage', {chat_id: form.chatId, text: form.text});
         const payload = await response.json();
         const next = payload.ok ? await saveState(config.kv, pushLog(state, '群通知', form.chatId)) : state;
-        return dashboard(next, {type: payload.ok ? 'ok' : 'bad', text: payload.ok ? '群通知已发送' : (payload.description || '发送失败')}, JSON.stringify({ok: payload.ok, chat_id: form.chatId, message_id: payload.result?.message_id}, null, 2));
+        return renderDashboard(config, next, {type: payload.ok ? 'ok' : 'bad', text: payload.ok ? '群通知已发送' : (payload.description || '发送失败')}, JSON.stringify({ok: payload.ok, chat_id: form.chatId, message_id: payload.result?.message_id}, null, 2));
     }
 
     if (path === '/admin/test') {
         const form = await readForm(request);
         const creds = resolveCreds(form, state);
         if (!creds.token || !creds.uid) {
-            return dashboard(state, {type: 'bad', text: '请先保存带 UID 的机器人'});
+            return renderDashboard(config, state, {type: 'bad', text: '请先保存带 UID 的机器人'});
         }
         const response = await postToTelegramApi(creds.token, 'sendMessage', {
             chat_id: creds.uid,
@@ -565,7 +603,7 @@ export async function handleAdmin(request, config) {
         });
         const payload = await response.json();
         const next = payload.ok ? await saveState(config.kv, pushLog(state, '测试私聊', creds.uid)) : state;
-        return dashboard(next, {type: payload.ok ? 'ok' : 'bad', text: payload.ok ? '测试消息已发送，去 Telegram 看看' : (payload.description || '发送失败')}, JSON.stringify({ok: payload.ok, chat_id: creds.uid, message_id: payload.result?.message_id}, null, 2));
+        return renderDashboard(config, next, {type: payload.ok ? 'ok' : 'bad', text: payload.ok ? '测试消息已发送，去 Telegram 看看' : (payload.description || '发送失败')}, JSON.stringify({ok: payload.ok, chat_id: creds.uid, message_id: payload.result?.message_id}, null, 2));
     }
 
     return new Response('Not Found', {status: 404});
