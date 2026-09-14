@@ -98,6 +98,10 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken) {
     }
 
     const message = update.message;
+    if (!message.chat || message.chat.type !== 'private') {
+        return new Response('OK');
+    }
+
     const reply = message.reply_to_message;
     try {
         if (reply && message.chat.id.toString() === ownerUid) {
