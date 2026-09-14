@@ -14,6 +14,7 @@
 - [六、绑定自定义域名](#六绑定自定义域名)
 - [七、安装 Webhook](#七安装-webhook)
 - [八、验证收发消息](#八验证收发消息)
+- [管理面板](#管理面板)
 - [把机器人放进群当通知机器人](#把机器人放进群当通知机器人)
 - [九、部署第二个或更多机器人](#九部署第二个或更多机器人)
 - [十、停用、恢复和彻底作废机器人](#十停用恢复和彻底作废机器人)
@@ -239,6 +240,33 @@ https://api.telegram.org/botYOUR_BOT_TOKEN/getWebhookInfo
 4. 访客账号应收到回复。
 
 机器人会忽略 `/start`，因此只发送 `/start` 不能验证转发是否正常。测试时再发送一条普通消息。
+
+## 管理面板
+
+不要再手动拼安装链接。部署后打开：
+
+```text
+https://YOUR_DOMAIN/admin
+```
+
+登录密码是 Cloudflare 加密变量 `ADMIN_PASSWORD`，不要用 `SECRET_TOKEN`，也不要写进 Git。
+
+设置方法：
+
+1. 打开 Cloudflare Dashboard
+2. 进入 Worker `open-wegram-bot`
+3. 打开 **Settings -> Variables and Secrets**
+4. 添加 Secret：名称 `ADMIN_PASSWORD`，值据你自己的密码
+5. 保存后打开 `/admin` 登录
+
+面板里可以：
+
+- 开通双向：填 UID 和 Bot Token
+- 查看 Webhook 状态
+- 关闭双向：卸载 Webhook，群通知不受影响
+- 发送群通知：填群 ID 和内容
+
+双向仍然只转发私聊。旧的 `/public/install/...` 链接还可用，但建议改用面板，避免 Token 进浏览器历史记录。
 
 ## 把机器人放进群当通知机器人
 

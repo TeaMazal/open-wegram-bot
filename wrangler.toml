@@ -4,6 +4,7 @@ compatibility_date = "2023-05-18"
 keep_vars = true
 
 # Keep non-sensitive runtime configuration in version control.
+# ADMIN_PASSWORD must be a Cloudflare secret, never commit it.
 [vars]
 PREFIX = "public"
 
