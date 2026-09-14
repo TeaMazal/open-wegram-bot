@@ -7,13 +7,17 @@
 
 import {handleRequest} from './core.js';
 import {handleAdmin} from './panel.js';
+import {loadState} from './store.js';
 
 export default {
     async fetch(request, env, ctx) {
+        const state = await loadState(env.PANEL_KV);
         const config = {
             prefix: env.PREFIX || 'public',
             secretToken: env.SECRET_TOKEN || '',
-            adminPassword: env.ADMIN_PASSWORD || ''
+            adminPassword: env.ADMIN_PASSWORD || '',
+            kv: env.PANEL_KV,
+            forwardGroups: !!state.forwardGroups
         };
 
         const path = new URL(request.url).pathname;

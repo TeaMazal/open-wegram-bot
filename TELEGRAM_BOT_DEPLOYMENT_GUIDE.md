@@ -265,6 +265,13 @@ https://YOUR_DOMAIN/admin
 - 查看 Webhook 状态
 - 关闭双向：卸载 Webhook，群通知不受影响
 - 发送群通知：填群 ID 和内容
+- 保存多个机器人，下次直接下拉选择
+- 在面板里修改登录密码
+- 开关：是否允许转发群消息
+- 发测试私聊
+- 查看最近操作记录
+
+面板密码保存在 Cloudflare KV，不进 GitHub。改密码后用新密码登录；Cloudflare 里的 `ADMIN_PASSWORD` 仍可应急登录。
 
 双向仍然只转发私聊。旧的 `/public/install/...` 链接还可用，但建议改用面板，避免 Token 进浏览器历史记录。
 

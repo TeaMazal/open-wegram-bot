@@ -8,6 +8,10 @@ keep_vars = true
 [vars]
 PREFIX = "public"
 
+[[kv_namespaces]]
+binding = "PANEL_KV"
+id = "dbe347aae58c448db307f2af7f6378fd"
+
 [observability]
 enabled = true
 

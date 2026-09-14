@@ -87,7 +87,7 @@ export async function handleUninstall(botToken, secretToken) {
     }
 }
 
-export async function handleWebhook(request, ownerUid, botToken, secretToken) {
+export async function handleWebhook(request, ownerUid, botToken, secretToken, forwardGroups = false) {
     if (secretToken !== request.headers.get('X-Telegram-Bot-Api-Secret-Token')) {
         return new Response('Unauthorized', {status: 401});
     }
@@ -98,7 +98,8 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken) {
     }
 
     const message = update.message;
-    if (!message.chat || message.chat.type !== 'private') {
+    const isPrivate = message.chat && message.chat.type === 'private';
+    if (!isPrivate && !forwardGroups) {
         return new Response('OK');
     }
 
@@ -126,7 +127,7 @@ export async function handleWebhook(request, ownerUid, botToken, secretToken) {
             return new Response('OK');
         }
 
-        const sender = message.chat;
+        const sender = message.from || message.chat;
         const senderUid = sender.id.toString();
         const senderName = formatSenderName(sender);
 
@@ -182,7 +183,7 @@ export async function handleRequest(request, config) {
     }
 
     if (match = path.match(WEBHOOK_PATTERN)) {
-        return handleWebhook(request, match[1], match[2], secretToken);
+        return handleWebhook(request, match[1], match[2], secretToken, config.forwardGroups);
     }
 
     return new Response('Not Found', {status: 404});
